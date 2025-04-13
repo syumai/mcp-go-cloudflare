@@ -1,4 +1,4 @@
-module github.com/syumai/mcp-go-wasm
+module github.com/syumai/mcp-go-cloudflare
 
 go 1.24.1
 

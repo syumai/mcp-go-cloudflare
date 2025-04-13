@@ -61,9 +61,10 @@ type SSEServer struct {
 	useFullURLForMessageEndpoint bool
 	messageEndpoint              string
 	sseEndpoint                  string
-	sessions                     sync.Map
-	srv                          *http.Server
-	contextFunc                  SSEContextFunc
+	// implement this using Durable Objects
+	sessions    sync.Map
+	srv         *http.Server
+	contextFunc SSEContextFunc
 
 	keepAlive         bool
 	keepAliveInterval time.Duration
