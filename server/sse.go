@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +26,14 @@ type sseSession struct {
 	sessionID           string
 	notificationChannel chan mcp.JSONRPCNotification
 	initialized         atomic.Bool
+}
+
+// sessions    sync.Map
+type SessionStore interface {
+	Store(sessionID string, session *sseSession)
+	Range(f func(sessionID string, session any) bool)
+	Load(sessionID string) (*sseSession, bool)
+	Delete(sessionID string)
 }
 
 // SSEContextFunc is a function that takes an existing context and the current
@@ -61,10 +68,9 @@ type SSEServer struct {
 	useFullURLForMessageEndpoint bool
 	messageEndpoint              string
 	sseEndpoint                  string
-	// implement this using Durable Objects
-	sessions    sync.Map
-	srv         *http.Server
-	contextFunc SSEContextFunc
+	sessions                     SessionStore
+	srv                          *http.Server
+	contextFunc                  SSEContextFunc
 
 	keepAlive         bool
 	keepAliveInterval time.Duration
@@ -162,6 +168,7 @@ func WithSSEContextFunc(fn SSEContextFunc) SSEOption {
 func NewSSEServer(server *server.MCPServer, opts ...SSEOption) *SSEServer {
 	s := &SSEServer{
 		server:                       server,
+		sessions:                     newSessionStore(),
 		sseEndpoint:                  "/sse",
 		messageEndpoint:              "/message",
 		useFullURLForMessageEndpoint: true,
@@ -204,7 +211,7 @@ func (s *SSEServer) Start(addr string) error {
 // and shutting down the HTTP server.
 func (s *SSEServer) Shutdown(ctx context.Context) error {
 	if s.srv != nil {
-		s.sessions.Range(func(key, value interface{}) bool {
+		s.sessions.Range(func(key string, value any) bool {
 			if session, ok := value.(*sseSession); ok {
 				close(session.done)
 			}
@@ -341,12 +348,11 @@ func (s *SSEServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionI, ok := s.sessions.Load(sessionID)
+	session, ok := s.sessions.Load(sessionID)
 	if !ok {
 		s.writeJSONRPCError(w, nil, mcp.INVALID_PARAMS, "Invalid session ID")
 		return
 	}
-	session := sessionI.(*sseSession)
 
 	// Set the client context before handling the message
 	ctx := s.server.WithContext(r.Context(), session)
@@ -407,11 +413,10 @@ func (s *SSEServer) SendEventToSession(
 	sessionID string,
 	event interface{},
 ) error {
-	sessionI, ok := s.sessions.Load(sessionID)
+	session, ok := s.sessions.Load(sessionID)
 	if !ok {
 		return fmt.Errorf("session not found: %s", sessionID)
 	}
-	session := sessionI.(*sseSession)
 
 	eventData, err := json.Marshal(event)
 	if err != nil {
