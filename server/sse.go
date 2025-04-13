@@ -309,7 +309,10 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			close(session.done)
 			return
+			// use time-based loop to avoid blocking on Cloudflare Workers runtime
+		default:
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
