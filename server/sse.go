@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -28,11 +29,10 @@ type sseSession struct {
 	initialized         atomic.Bool
 }
 
-// sessions    sync.Map
-type SessionStore interface {
-	Store(sessionID string, session *sseSession)
-	Range(f func(sessionID string, session any) bool)
-	Load(sessionID string) (*sseSession, bool)
+type SessionIDStore interface {
+	Store(sessionID string)
+	Range(f func(sessionID string) bool)
+	Load(sessionID string) bool
 	Delete(sessionID string)
 }
 
@@ -68,7 +68,8 @@ type SSEServer struct {
 	useFullURLForMessageEndpoint bool
 	messageEndpoint              string
 	sseEndpoint                  string
-	sessions                     SessionStore
+	sessions                     sync.Map
+	sessionIDs                   SessionIDStore
 	srv                          *http.Server
 	contextFunc                  SSEContextFunc
 
@@ -168,7 +169,8 @@ func WithSSEContextFunc(fn SSEContextFunc) SSEOption {
 func NewSSEServer(server *server.MCPServer, opts ...SSEOption) *SSEServer {
 	s := &SSEServer{
 		server:                       server,
-		sessions:                     newSessionStore(),
+		sessions:                     sync.Map{},
+		sessionIDs:                   newSessionIDStore(),
 		sseEndpoint:                  "/sse",
 		messageEndpoint:              "/message",
 		useFullURLForMessageEndpoint: true,
@@ -211,11 +213,12 @@ func (s *SSEServer) Start(addr string) error {
 // and shutting down the HTTP server.
 func (s *SSEServer) Shutdown(ctx context.Context) error {
 	if s.srv != nil {
-		s.sessions.Range(func(key string, value any) bool {
+		s.sessions.Range(func(key any, value any) bool {
 			if session, ok := value.(*sseSession); ok {
 				close(session.done)
 			}
 			s.sessions.Delete(key)
+			s.sessionIDs.Delete(key.(string))
 			return true
 		})
 
@@ -348,16 +351,10 @@ func (s *SSEServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, ok := s.sessions.Load(sessionID)
+	ok := s.sessionIDs.Load(sessionID)
 	if !ok {
 		s.writeJSONRPCError(w, nil, mcp.INVALID_PARAMS, "Invalid session ID")
 		return
-	}
-
-	// Set the client context before handling the message
-	ctx := s.server.WithContext(r.Context(), session)
-	if s.contextFunc != nil {
-		ctx = s.contextFunc(ctx, r)
 	}
 
 	// Parse message as raw JSON
@@ -368,13 +365,14 @@ func (s *SSEServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process message through MCPServer
-	response := s.server.HandleMessage(ctx, rawMessage)
+	response := s.server.HandleMessage(r.Context(), rawMessage)
 
 	// Only send response if there is one (not for notifications)
 	if response != nil {
 		eventData, _ := json.Marshal(response)
 
 		// Queue the event for sending via SSE
+		// TODO: send message to another worker
 		select {
 		case session.eventQueue <- fmt.Sprintf("event: message\ndata: %s\n\n", eventData):
 			// Event queued successfully
@@ -413,7 +411,12 @@ func (s *SSEServer) SendEventToSession(
 	sessionID string,
 	event interface{},
 ) error {
-	session, ok := s.sessions.Load(sessionID)
+	sessionI, ok := s.sessions.Load(sessionID)
+	if !ok {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	session, ok := sessionI.(*sseSession)
 	if !ok {
 		return fmt.Errorf("session not found: %s", sessionID)
 	}

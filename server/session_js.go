@@ -2,27 +2,27 @@
 
 package server
 
-// implement SessionStore interface using Durable Objects
-type sessionStore struct{}
+// implement SessionIDStore interface using Durable Objects
+type sessionIDStore struct{}
 
-func newSessionStore() SessionStore {
+func newSessionIDStore() SessionIDStore {
 	// TODO
 	return nil
 }
 
-func (s *sessionStore) Store(sessionID string, session *sseSession) {
+func (s *sessionIDStore) Store(sessionID string) {
 	// TODO
 }
 
-func (s *sessionStore) Range(f func(key, value *sseSession) bool) {
+func (s *sessionIDStore) Range(f func(sessionID string) bool) {
 	// TODO
 }
 
-func (s *sessionStore) Load(sessionID string) (*sseSession, bool) {
+func (s *sessionIDStore) Load(sessionID string) bool {
 	// TODO
-	return nil, false
+	return false
 }
 
-func (s *sessionStore) Delete(sessionID string) {
+func (s *sessionIDStore) Delete(sessionID string) {
 	// TODO
 }

@@ -4,32 +4,29 @@ package server
 
 import "sync"
 
-type sessionStore struct {
+type sessionIDStore struct {
 	sessions sync.Map
 }
 
-func newSessionStore() SessionStore {
-	return &sessionStore{}
+func newSessionIDStore() SessionIDStore {
+	return &sessionIDStore{}
 }
 
-func (s *sessionStore) Store(sessionID string, session *sseSession) {
-	s.sessions.Store(sessionID, session)
+func (s *sessionIDStore) Store(sessionID string) {
+	s.sessions.Store(sessionID, true)
 }
 
-func (s *sessionStore) Range(f func(sessionID string, value any) bool) {
+func (s *sessionIDStore) Range(f func(sessionID string) bool) {
 	s.sessions.Range(func(sessionID, value any) bool {
-		return f(sessionID.(string), value.(*sseSession))
+		return f(sessionID.(string))
 	})
 }
 
-func (s *sessionStore) Load(sessionID string) (*sseSession, bool) {
-	session, ok := s.sessions.Load(sessionID)
-	if !ok {
-		return nil, false
-	}
-	return session.(*sseSession), true
+func (s *sessionIDStore) Load(sessionID string) bool {
+	_, ok := s.sessions.Load(sessionID)
+	return ok
 }
 
-func (s *sessionStore) Delete(sessionID string) {
+func (s *sessionIDStore) Delete(sessionID string) {
 	s.sessions.Delete(sessionID)
 }
