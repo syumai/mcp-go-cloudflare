@@ -1,0 +1,11 @@
+{
+  "name": "@syumai/mcp-go-cloudflare",
+  "private": true,
+  "version": "0.1.0",
+  "author": "syumai",
+  "license": "MIT",
+  "packageManager": "pnpm@10.6.3",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250414.0"
+  }
+}
