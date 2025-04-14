@@ -1,9 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
 
-type SSESession = {
-  sessionId: string;
-};
-
 type Env = unknown;
 
 export class SessionStore extends DurableObject {
@@ -17,31 +13,26 @@ export class SessionStore extends DurableObject {
     );`);
   }
 
-  async store(sessionId: string, session: SSESession): Promise<void> {
+  async store(sessionId: string): Promise<void> {
     this.sql.exec("INSERT INTO sessions (session_id) VALUES ($1)", [sessionId]);
   }
 
-  async range(
-    f: (sessionId: string, session: SSESession) => boolean
-  ): Promise<void> {
-    const rows = await this.sql.exec("SELECT * FROM sessions");
-    for (const row of rows) {
-      const session: SSESession = { sessionId: row.session_id };
-      if (!f(row.session_id, session)) {
-        break;
-      }
-    }
+  async list(): Promise<string[]> {
+    const cursor = this.sql.exec("SELECT * FROM sessions");
+    const rows = cursor.toArray();
+    return rows.map((row) => row.session_id as string);
   }
 
-  async load(sessionId: string): Promise<SSESession | null> {
-    const row = await this.sql.exec(
+  async load(sessionId: string): Promise<string | null> {
+    const cursor = this.sql.exec(
       "SELECT * FROM sessions WHERE session_id = $1",
       [sessionId]
     );
-    if (row.length === 0) {
+    const rows = cursor.toArray();
+    if (rows[0] === undefined) {
       return null;
     }
-    return { sessionId: row[0].session_id };
+    return rows[0].session_id as string;
   }
 
   async delete(sessionId: string): Promise<void> {
